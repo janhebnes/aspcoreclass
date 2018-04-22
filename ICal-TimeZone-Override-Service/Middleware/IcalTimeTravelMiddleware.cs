@@ -1,5 +1,6 @@
 ﻿using ICalTimeZoneOverrideService.Middleware;
 using ICalTimeZoneOverrideService.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System;
@@ -41,13 +42,15 @@ namespace ICalTimeZoneOverrideService.Middleware
         private readonly RequestDelegate next;
         private readonly TimeTravelOptions options;
         private readonly ILogger logger;
+        private readonly IHostingEnvironment env;
 
         public IcalTimeTravelMiddleware(RequestDelegate next, TimeTravelOptions options,
-                                  ILoggerFactory logger)
+                                  ILoggerFactory logger, IHostingEnvironment env)
         {
             this.next = next;
             this.options = options;
             this.logger = logger.CreateLogger<IcalTimeTravelMiddleware>();
+            this.env = env;
         }
 
         public async Task Invoke(HttpContext context, IIcalTimeTravelService greeter)
@@ -97,9 +100,12 @@ namespace ICalTimeZoneOverrideService.Middleware
                                 output.WriteLine(line);
                             }
 
-                            context.Response.ContentType = "text/plain";
-                            await context.Response.WriteAsync($"TzId:{tzid}\nUrl:{url}\n\n{output.ToString()}");
-                            return;
+                            if (env.IsDevelopment())
+                            {
+                                context.Response.ContentType = "text/plain";
+                                await context.Response.WriteAsync($"TzId:{tzid}\nUrl:{url}\n\n{output.ToString()}");
+                                return;
+                            }
 
                             context.Response.ContentType = "application/octet-stream";
                             await context.Response.WriteAsync(output.ToString());
@@ -117,7 +123,15 @@ namespace ICalTimeZoneOverrideService.Middleware
 
                 var message = greeter.GetWelcomeMessage();
                 context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync($"{message}\nPlease provide the querystring parameters ?tzid= &url=\nE.g.h/?tzid=Europe/Copenhagen&url=http://ical.sport-solution.com/1908586.ics");
+                await context.Response.WriteAsync($"{message}\nThis service is created for repairing ical feeds where the local timezone is missing, " +
+                    " BEGIN: VEVENT \n" +
+                    " DTEND: 20180426T171500 \n" +
+                    " DTSTAMP: 20180419T122646Z \n" +
+                    " DTSTART: 20180426T163000 \n" +
+                    " SEQUENCE: 0 \n" +
+                    " \n" +
+                    $"DTEND;TZID=Europe/Copenhagen: is injected on DTSTART and DTEND if Zulu is not used. \nSee more on https://stackoverflow.com/questions/10518804/formatting-time-for-ical-export" +
+                    $"\n\nPlease provide the querystring parameters ?tzid= &url=\n\nE.g. ?tzid=Europe/Copenhagen&url=http://ical.sport-solution.com/1908586.ics \n\n Source code: https://github.com/janhebnes/aspcoreclass/tree/master/ICal-TimeZone-Override-Service");
             }
             else
             {
